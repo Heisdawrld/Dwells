@@ -1,229 +1,35 @@
 (() => {
-  'use strict';
-  const $ = s => document.querySelector(s);
-  const $$ = s => [...document.querySelectorAll(s)];
-  const STORAGE = 'dwell-stay-v3';
-  const defaults = () => ({ checkin: '', checkout: '', guests: '2', name: '', notes: '' });
-  let draft = null, saved = false, storageWorks = true, clearedDraft = null;
-  try {
-    const data = JSON.parse(sessionStorage.getItem(STORAGE) || 'null');
-    saved = data?.saved === true;
-    if (data?.draft && typeof data.draft === 'object') {
-      draft = defaults();
-      for (const key of Object.keys(draft)) if (typeof data.draft[key] === 'string') draft[key] = data.draft[key].slice(0, key === 'notes' ? 700 : 80);
-    }
-  } catch { storageWorks = false; }
-  const form = $('#enquiry'), booking = $('#booking'), detail = $('#detail-screen');
-  const checkin = $('#checkin'), checkout = $('#checkout'), guestInput = $('#guests');
-  let currentScreen = 'explore', returnScreen = 'explore', step = 0, enquiryText = '';
-  let slideIndex = 0, photoIndex = 0, toastTimer;
-  const photos = [
-    ['assets/1-hotel-miami-beach-may-2015-41-1920.jpg', 'Interior inspiration · sample photo'],
-    ['assets/canopy-bed-of-khan-pool-suite-in-amantaka-luxury-resort-hote-1920.jpg', 'Bedroom inspiration · sample photo'],
-    ['assets/lobby-lounge-of-amantaka-suite-amantaka-luxury-resort-hotel--1920.jpg', 'Living inspiration · sample photo']
-  ];
-
-  function localDate(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
-  function today() { return localDate(new Date()); }
-  function isDate(value) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return false;
-    const d = new Date(value + 'T12:00:00');
-    return !isNaN(d) && localDate(d) === value;
-  }
-  function nights(d) { return isDate(d?.checkin) && isDate(d?.checkout) ? Math.round((Date.parse(d.checkout) - Date.parse(d.checkin)) / 86400000) : 0; }
-  function validStay(d) { return d && isDate(d.checkin) && isDate(d.checkout) && d.checkin >= today() && nights(d) > 0 && Number.isSafeInteger(Number(d.guests)) && Number(d.guests) >= 1; }
-  function complete(d) { return validStay(d) && !!d.name.trim(); }
-  function pretty(date) { return isDate(date) ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(date + 'T12:00:00')) : 'Choose a date'; }
-  function nightLabel(d) { const n = nights(d); return n > 0 ? `${n} night${n === 1 ? '' : 's'}` : 'Dates to be completed'; }
-  function notify(message) { const t = $('#toast'); t.textContent = message; t.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.display = 'none', 3000); }
-
-  function persist() {
-    try { sessionStorage.setItem(STORAGE, JSON.stringify({ saved, draft })); storageWorks = true; }
-    catch { storageWorks = false; }
-    renderState();
-  }
-  function captureDraft() {
-    draft = Object.fromEntries(Object.keys(defaults()).map(key => [key, form.elements[key].value]));
-    persist();
-  }
-  function fillForm() { const data = draft || defaults(); for (const key of Object.keys(data)) form.elements[key].value = data[key]; updateDateSummary(); }
-  function renderState() {
-    $('#save').setAttribute('aria-pressed', String(saved));
-    $('#save').setAttribute('aria-label', saved ? 'Remove saved apartment' : 'Save apartment');
-    $('#saved-empty').hidden = saved;
-    $('#saved-card').hidden = !saved;
-    $('#enquiry-empty').hidden = !!draft;
-    $('#enquiry-draft').hidden = !draft;
-    $('.draft-dot').hidden = !draft;
-    if (draft) {
-      $('#draft-in').textContent = pretty(draft.checkin);
-      $('#draft-out').textContent = pretty(draft.checkout);
-      $('#draft-nights').textContent = nightLabel(draft);
-      $('#draft-guests').textContent = `${draft.guests || '—'} guest${draft.guests === '1' ? '' : 's'} requested`;
-      $('#draft-name').textContent = draft.name.trim() ? `Prepared for ${draft.name.trim()}` : 'Add your name to complete your enquiry.';
-      $('#resume-enquiry').textContent = complete(draft) ? 'Review & share enquiry' : 'Continue enquiry';
-      $('.draft-disclosure').textContent = `${storageWorks ? 'Saved in this browser tab.' : 'Saved for this visit only; reloading may clear it.'} This is not a reservation, and the website has not sent a message.`;
-    }
-    const ready = validStay(draft);
-    $('#plan-prompt').textContent = ready ? `${pretty(draft.checkin)} – ${pretty(draft.checkout)}` : 'When would you like to stay?';
-    $('#plan-caption').textContent = ready ? `${nightLabel(draft)} · ${draft.guests} guest${draft.guests === '1' ? '' : 's'} · Edit your plans` : 'Choose dates & guests · Enquire directly';
-    $('.date-action').textContent = ready ? 'Edit dates' : 'Plan a stay';
-  }
-
-  function navigate(view) {
-    if (location.hash === '#' + view) renderRoute();
-    else location.hash = view;
-  }
-  function renderRoute() {
-    const view = location.hash.slice(1);
-    const showDetail = view === 'apartment';
-    currentScreen = ['explore', 'saved', 'enquiry', 'contact'].includes(view) ? view : (showDetail ? returnScreen : 'explore');
-    detail.hidden = !showDetail;
-    ['explore', 'saved', 'enquiry', 'contact'].forEach(n => { const el = $(`#${n}-screen`); el.hidden = n !== currentScreen; el.inert = showDetail; });
-    $('.app-header').inert = showDetail;
-    $('.bottom-nav').inert = showDetail;
-    $$('.bottom-nav>button').forEach(b => {
-      const active = b.hasAttribute('data-' + currentScreen);
-      b.classList.toggle('active', active);
-      if (active) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
-    });
-    document.title = showDetail ? 'The Yaba apartment — Dwell' : ({ explore: 'Explore', saved: 'Saved', enquiry: 'My enquiry', contact: 'Contact' }[currentScreen] + ' — Dwell');
-    if (showDetail) {
-      detail.scrollTop = 0; $('.detail-body').scrollTop = 0;
-      $('#detail-back').focus({ preventScroll: true });
-    } else {
-      window.scrollTo({ top: 0 });
-      const heading = $(`#${currentScreen}-screen h1`);
-      if (heading) { heading.setAttribute('tabindex', '-1'); heading.focus({ preventScroll: true }); }
-    }
-    renderState();
-  }
-  function openDetail(section) {
-    if (location.hash !== '#apartment') returnScreen = currentScreen;
-    navigate('apartment');
-    if (section === 'amenities' || section === 'location') requestAnimationFrame(() => requestAnimationFrame(() => {
-      $(section === 'amenities' ? '#amenity-section' : '#detail-location').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
-    }));
-  }
-  window.addEventListener('hashchange', renderRoute);
-  ['explore', 'saved', 'enquiry', 'contact'].forEach(view => $$(`[data-${view}]`).forEach(b => b.addEventListener('click', () => navigate(view))));
-  $('.brand').onclick = e => { e.preventDefault(); navigate('explore'); };
-  $$('[data-detail]').forEach(b => b.onclick = () => openDetail(b.dataset.detail));
-  $('#detail-back').onclick = () => navigate(returnScreen);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('dialog[open]') && !detail.hidden) navigate(returnScreen); });
-  $('#save').onclick = () => { saved = !saved; persist(); notify(saved ? 'Apartment saved in this tab.' : 'Apartment removed from saved.'); };
-
-  function updateDateSummary() {
-    checkin.min = today(); checkout.min = today();
-    checkin.setCustomValidity(''); checkout.setCustomValidity('');
-    if (isDate(checkin.value)) { const next = new Date(checkin.value + 'T12:00:00'); next.setDate(next.getDate() + 1); checkout.min = localDate(next); }
-    if (checkin.value && checkin.value < today()) checkin.setCustomValidity('Choose today or a future check-in date.');
-    if (checkin.value && checkout.value && checkout.value <= checkin.value) checkout.setCustomValidity('Check-out must be after check-in.');
-    const n = nights({ checkin: checkin.value, checkout: checkout.value });
-    $('#night-summary').textContent = n > 0 ? `${n} night${n === 1 ? '' : 's'} to make yourself at home.` : 'Choose your preferred dates.';
-    $('#guest-minus').disabled = Number(guestInput.value) <= 1;
-  }
-  function validateStep(index) {
-    updateDateSummary();
-    const fields = index === 0 ? [checkin, checkout, guestInput] : [form.elements.name];
-    if (index === 1) form.elements.name.setCustomValidity(form.elements.name.value.trim() ? '' : 'Please enter your name.');
-    if (index === 0) guestInput.setCustomValidity(Number.isSafeInteger(Number(guestInput.value)) && Number(guestInput.value) >= 1 ? '' : 'Enter a whole number of guests, starting from 1.');
-    for (const field of fields) if (!field.reportValidity()) return false;
-    return true;
-  }
-  function setStep(next, focus = true) {
-    step = next;
-    form.hidden = next === 2;
-    $$('[data-step]').forEach(el => el.hidden = Number(el.dataset.step) !== next);
-    $$('[data-step-indicator]').forEach(el => {
-      const n = Number(el.dataset.stepIndicator); el.classList.toggle('active', n === next); el.classList.toggle('done', n < next);
-      if (n === next) el.setAttribute('aria-current', 'step'); else el.removeAttribute('aria-current');
-    });
-    if (next === 2) buildReview();
-    $('#planner-status').textContent = draft ? (storageWorks ? 'Draft saved in this tab.' : 'Draft kept for this visit only.') : '';
-    booking.scrollTop = 0;
-    if (focus) { const h = $(`[data-step="${next}"] h3`); h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
-  }
-  function openPlanner(preferred = 0) {
-    fillForm();
-    let next = preferred;
-    if (!validStay(draft)) next = 0;
-    else if (next === 2 && !complete(draft)) next = 1;
-    if (!booking.open) booking.showModal();
-    setStep(next);
-  }
-  $$('[data-book]').forEach(b => b.onclick = () => openPlanner(0));
-  $('#resume-enquiry').onclick = () => openPlanner(complete(draft) ? 2 : validStay(draft) ? 1 : 0);
-  $('#edit-draft-dates').onclick = () => openPlanner(0);
-  form.addEventListener('input', e => { e.target.setCustomValidity?.(''); updateDateSummary(); captureDraft(); $('#planner-status').textContent = storageWorks ? 'Draft saved in this tab.' : 'Draft kept for this visit only.'; });
-  form.addEventListener('change', () => { updateDateSummary(); captureDraft(); });
-  $('#guest-minus').onclick = () => { guestInput.value = String(Math.max(1, (Number(guestInput.value) || 1) - 1)); updateDateSummary(); captureDraft(); };
-  $('#guest-plus').onclick = () => { const n = Number(guestInput.value) || 1; if (Number.isSafeInteger(n) && n < Number.MAX_SAFE_INTEGER) guestInput.value = String(n + 1); updateDateSummary(); captureDraft(); };
-  form.addEventListener('submit', e => {
-    e.preventDefault();
-    if (!validateStep(step)) return;
-    if (step === 1 && !validateStep(0)) { setStep(0); return; }
-    captureDraft();
-    setStep(step + 1);
-  });
-  $$('[data-back-step]').forEach(b => b.onclick = () => setStep(Math.max(0, step - 1)));
-  $('#edit').onclick = () => setStep(0);
-  function buildReview() {
-    const d = draft;
-    $('#review-dates').textContent = `${pretty(d.checkin)} – ${pretty(d.checkout)} · ${nightLabel(d)}`;
-    $('#review-guests').textContent = `${d.guests} requested · capacity to be confirmed`;
-    $('#review-name').textContent = d.name.trim();
-    $('#review-notes-row').hidden = !d.notes.trim();
-    $('#review-notes').textContent = d.notes.trim();
-    enquiryText = `Hello Dwell Spaces Hospitality,\n\nMy name is ${d.name.trim()}. I'd like to enquire about your two-bedroom apartment at 16 Morroco Road, Yaba, Lagos.\n\nCheck-in: ${pretty(d.checkin)}\nCheck-out: ${pretty(d.checkout)}\nLength of stay: ${nightLabel(d)}\nGuests: ${d.guests}\n${d.notes.trim() ? '\nSpecial requests: ' + d.notes.trim() + '\n' : ''}\nPlease confirm availability, guest capacity, the total price including any fees or deposit, and booking/cancellation terms. Thank you.`;
-    $('#message').textContent = enquiryText;
-    $('#whatsapp').href = 'https://wa.me/2348163899175?text=' + encodeURIComponent(enquiryText);
-    $('#copy-status').textContent = '';
-  }
-  $('#finish-later').onclick = () => { booking.close(); navigate('enquiry'); notify('Your enquiry draft is ready when you are.'); };
-  $('#whatsapp').addEventListener('click', e => {
-    if (!complete(draft)) { e.preventDefault(); setStep(0); notify('Please review your dates before continuing.'); return; }
-    $('#planner-status').textContent = 'Send your message in WhatsApp. Your draft remains here; no booking is confirmed.';
-  });
-  $('#copy').onclick = async () => {
-    try { await navigator.clipboard.writeText(enquiryText); $('#copy-status').textContent = 'Message copied.'; }
-    catch { $('#copy-status').textContent = 'Copy is unavailable here. Select and copy the message above.'; }
-  };
-  $('#clear-draft').onclick = () => {
-    clearedDraft = draft; draft = null; persist(); form.reset(); $('#undo-clear').hidden = false;
-    $('#enquiry-empty').append($('#undo-clear')); notify('Draft cleared. You can restore it below.');
-  };
-  $('#undo-clear').onclick = () => { if (clearedDraft) { draft = clearedDraft; clearedDraft = null; persist(); $('#undo-clear').hidden = true; notify('Draft restored.'); } };
-  $$('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
-  $$('dialog').forEach(d => d.addEventListener('click', e => {
-    if (e.target !== d) return;
-    const r = d.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) d.close();
-  }));
-
-  function showPhoto() {
-    const [src, caption] = photos[photoIndex]; $('#gallery-image').src = src; $('#gallery-image').alt = caption;
-    $('#gallery-caption').textContent = `${photoIndex + 1} / ${photos.length} — ${caption}`;
-  }
-  $$('[data-gallery]').forEach(b => b.onclick = () => { photoIndex = Number(b.dataset.gallery); showPhoto(); $('#gallery').showModal(); });
-  $('#prev').onclick = () => { photoIndex = (photoIndex + photos.length - 1) % photos.length; showPhoto(); };
-  $('#next').onclick = () => { photoIndex = (photoIndex + 1) % photos.length; showPhoto(); };
-  $('#gallery').addEventListener('keydown', e => { if (e.key === 'ArrowLeft') $('#prev').click(); if (e.key === 'ArrowRight') $('#next').click(); });
-  function setSlide(n) {
-    slideIndex = (n + photos.length) % photos.length;
-    $('#featured-img').src = photos[slideIndex][0]; $('#featured-img').alt = photos[slideIndex][1];
-    $('#detail-image').src = photos[slideIndex][0]; $('#detail-image').alt = photos[slideIndex][1];
-    $$('[data-slide]').forEach(b => { const active = Number(b.dataset.slide) === slideIndex; b.classList.toggle('active', active); b.setAttribute('aria-pressed', String(active)); });
-    $$('[data-category]').forEach(b => { const active = Number(b.dataset.category) === slideIndex; b.classList.toggle('selected', active); b.setAttribute('aria-pressed', String(active)); });
-  }
-  $$('[data-slide]').forEach(b => b.onclick = () => setSlide(Number(b.dataset.slide)));
-  $$('[data-category]').forEach(b => b.onclick = () => setSlide(Number(b.dataset.category)));
-  $('#slide-prev').onclick = () => setSlide(slideIndex - 1); $('#slide-next').onclick = () => setSlide(slideIndex + 1);
-  let startX = 0, startY = 0, swipeTime = 0;
-  const card = $('.featured-card');
-  card.addEventListener('touchstart', e => { startX = e.changedTouches[0].clientX; startY = e.changedTouches[0].clientY; }, { passive: true });
-  card.addEventListener('touchend', e => { const dx = e.changedTouches[0].clientX - startX, dy = e.changedTouches[0].clientY - startY; if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) { swipeTime = Date.now(); setSlide(slideIndex + (dx < 0 ? 1 : -1)); } }, { passive: true });
-  card.addEventListener('click', e => { if (Date.now() - swipeTime < 350) { e.stopPropagation(); e.preventDefault(); } }, true);
-  $('#show-amenities').setAttribute('aria-expanded', 'false');
-  $('#show-amenities').onclick = function () { const all = $('#all-amenities'); all.hidden = !all.hidden; this.textContent = all.hidden ? 'Show all 14 amenities' : 'Show fewer amenities'; this.setAttribute('aria-expanded', String(!all.hidden)); };
-  setSlide(0); renderRoute();
+'use strict';
+const $=s=>document.querySelector(s);
+// Client-supplied names; per-residence rates, bedrooms, capacity and addresses await confirmation.
+const residences=[{id:'olive-suites',name:'Olive Suites',photo:0},{id:'lychee-residence',name:'Lychee Residence',photo:1},{id:'kiwi-residence',name:'Kiwi Residence',photo:2},{id:'cherry-suites',name:'Cherry Suites',photo:1}];
+const photos=[['assets/lobby-lounge-of-amantaka-suite-amantaka-luxury-resort-hotel--1920.jpg','Illustrative lounge with olive shutters'],['assets/canopy-bed-of-khan-pool-suite-in-amantaka-luxury-resort-hote-1920.jpg','Illustrative canopy bedroom'],['assets/1-hotel-miami-beach-may-2015-41-1920.jpg','Illustrative lounge with warm wood and soft seating']];
+const form=$('#form'), enquiry=$('#enquiry-dialog'), detail=$('#property-dialog'), key='dwell-editorial-enquiry-v1';let message='',returnFocus=null;
+const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dateString=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+const today=()=>dateString(new Date()), day=s=>Date.parse(s+'T00:00:00Z')/86400000, pretty=s=>new Date(s+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+const values=()=>Object.fromEntries(new FormData(form));
+const persist=()=>{try{sessionStorage.setItem(key,JSON.stringify(values()));}catch{$('.draft').firstChild.textContent='Your draft is available until this page closes. ';}};
+$('#year').textContent=new Date().getFullYear();
+$('#properties').innerHTML=residences.map(p=>`<article class="card"><a href="#residence/${p.id}" aria-label="Explore ${p.name}"><div class="image-wrap"><img src="${photos[p.photo][0]}" alt="${photos[p.photo][1]}" loading="lazy"><span class="sample">Sample image</span></div><div class="card-meta"><div><h3>${p.name}</h3><p>Yaba, Lagos</p></div><span class="text-link">Explore residence</span></div></a></article>`).join('');
+residences.forEach(p=>$('#residence').add(new Option(p.name,p.id)));
+try{const saved=JSON.parse(sessionStorage.getItem(key)||'null');if(saved&&typeof saved==='object')for(const [n,v]of Object.entries(saved))if(form.elements.namedItem(n)&&typeof v==='string')form.elements.namedItem(n).value=v;}catch{}
+if(!$('#residence').value)$('#residence').value='any';
+function updateDates(){ $('#checkin').min=today();const start=$('#checkin').value;const next=start?new Date(start+'T12:00:00'):new Date();next.setDate(next.getDate()+1);$('#checkout').min=dateString(next);const n=day($('#checkout').value)-day(start);$('#nights').textContent=Number.isFinite(n)&&n>0?`${n} ${n===1?'night':'nights'} · subject to availability`:'';}
+updateDates();form.addEventListener('input',()=>{updateDates();persist();$('#error').textContent='';});
+function menuClose(){$('#nav').classList.remove('open');$('#menu').setAttribute('aria-expanded','false');}
+$('#menu').onclick=()=>$('#menu').setAttribute('aria-expanded',String($('#nav').classList.toggle('open')));
+$('#nav').onclick=e=>{if(e.target.closest('a'))menuClose();};document.addEventListener('keydown',e=>{if(e.key==='Escape')menuClose();});
+function show(d){if(!d.open){if(!detail.open&&!enquiry.open)returnFocus=document.activeElement;detail.close();enquiry.close();d.showModal();}}
+function close(){detail.close();enquiry.close();history.replaceState(null,'',location.pathname+location.search+'#residences');if(returnFocus?.isConnected)returnFocus.focus();}
+document.querySelectorAll('[data-close]').forEach(b=>b.onclick=close);[detail,enquiry].forEach(d=>d.addEventListener('cancel',e=>{e.preventDefault();close();}));
+function showProperty(p){let i=p.photo;$('#property-content').innerHTML=`<div class="gallery"><img id="gallery-image" src="${photos[i][0]}" alt="${photos[i][1]}"><span class="sample">Illustrative photography · not this residence</span></div><div class="gallery-controls"><button id="previous" aria-label="Previous sample photo">Previous</button><span id="photo-count"></span><button id="next" aria-label="Next sample photo">Next</button></div><div class="property-body"><p class="eyebrow">The Dwell collection · Yaba, Lagos</p><h2 id="property-title">${p.name}</h2><p>A space in our thoughtfully curated Yaba collection. Tell us when you’d like to stay and we’ll help with the details.</p><p class="muted">Full residence details and photography are being prepared. Our team will confirm bedrooms, guest capacity, amenities, the exact location and current rates before you reserve.</p><a class="button full" href="#enquire/${p.id}">Enquire about ${p.name}</a></div>`;
+function photo(){$('#gallery-image').src=photos[i][0];$('#gallery-image').alt=photos[i][1];$('#photo-count').textContent=`Sample ${i+1} of ${photos.length}`;}$('#previous').onclick=()=>{i=(i+photos.length-1)%photos.length;photo();};$('#next').onclick=()=>{i=(i+1)%photos.length;photo();};photo();show(detail);}
+function edit(){form.hidden=false;$('#review').hidden=true;$('#copy-status').textContent='';}
+function route(){const [kind,id]=location.hash.slice(1).split('/');if(kind==='residence'){const p=residences.find(p=>p.id===id);if(p){showProperty(p);return;}}if(kind==='enquire'){if(residences.some(p=>p.id===id)){$('#residence').value=id;persist();}edit();updateDates();show(enquiry);return;}detail.close();enquiry.close();}
+window.addEventListener('hashchange',route);route();
+form.onsubmit=e=>{e.preventDefault();const d=values(), n=day(d.checkout)-day(d.checkin);if(!d.name.trim()){$('#error').textContent='Please enter your name.';$('#guest-name').focus();return;}if(d.checkin<today()||!Number.isFinite(n)||n<1){$('#error').textContent='Choose dates with check-out after check-in, and check-in today or later.';return;}if(!Number.isInteger(Number(d.guests))||Number(d.guests)<1){$('#error').textContent='Enter a whole number of guests, at least one.';return;}const name=residences.find(p=>p.id===d.residence)?.name||'Help me choose a residence';message=`Hello Dwell Spaces, I’d like to enquire about a stay.\n\nResidence: ${name}\nCheck-in: ${pretty(d.checkin)}\nCheck-out: ${pretty(d.checkout)}\nNights: ${n}\nGuests: ${d.guests}\nName: ${d.name.trim()}${d.notes.trim()?'\nRequests: '+d.notes.trim():''}\n\nPlease confirm availability, the total price, property details and booking terms. Thank you.`;const rows=[['Residence',name],['Dates',`${pretty(d.checkin)} – ${pretty(d.checkout)} (${n} ${n===1?'night':'nights'})`],['Guests',d.guests],['Name',d.name.trim()],['Requests',d.notes.trim()||'None added']];$('#review-details').innerHTML=rows.map(([k,v])=>`<div><dt>${k}</dt><dd>${escape(v)}</dd></div>`).join('');$('#whatsapp').href='https://wa.me/2348163899175?text='+encodeURIComponent(message);form.hidden=true;$('#review').hidden=false;persist();$('#whatsapp').focus();};
+$('#edit').onclick=()=>{edit();$('#residence').focus();};$('#copy').onclick=async()=>{try{await navigator.clipboard.writeText(message);$('#copy-status').textContent='Message copied.';}catch{$('#copy-status').textContent='Copy is unavailable. Continue on WhatsApp to open the prepared message.';}};
+$('#clear').onclick=()=>{form.reset();try{sessionStorage.removeItem(key);}catch{}edit();updateDates();$('#error').textContent='';$('#residence').focus();};
+$('#credits-open').onclick=()=>$('#credits').showModal();$('#credits-close').onclick=()=>$('#credits').close();
 })();
