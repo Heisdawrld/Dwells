@@ -31,3 +31,4 @@
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;scroll-behavior:auto!important}}
 .price-box,.booking-terms{background:#eae8dd;padding:18px 20px;margin:24px 0}.price-box strong{font-size:22px;font-weight:500}.price-box p{margin-top:8px}.card-meta .card-price{font-size:14px;color:var(--ink)}
+.amenities{margin:30px 0;padding-top:25px;border-top:1px solid var(--line)}.amenities h3{font-size:28px}.amenities ul{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px;list-style:none;padding:0;margin:24px 0}.amenities li{font-size:14px;padding-left:17px;position:relative}.amenities li::before{content:'';position:absolute;left:0;top:10px;width:5px;height:5px;border:1px solid var(--olive);border-radius:50%}@media(max-width:420px){.amenities ul{gap:14px 16px}}
