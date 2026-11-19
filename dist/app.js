@@ -33,3 +33,26 @@ $('#edit').onclick=()=>{edit();$('#residence').focus();};$('#copy').onclick=asyn
 $('#clear').onclick=()=>{form.reset();try{sessionStorage.removeItem(key);}catch{}edit();updateDates();$('#error').textContent='';$('#residence').focus();};
 $('#credits-open').onclick=()=>$('#credits').showModal();$('#credits-close').onclick=()=>$('#credits').close();
 })();
+
+// Progressive enhancement: content remains visible if animation APIs are unavailable.
+(() => {
+  const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+  if (!('IntersectionObserver' in window) || !Element.prototype.animate) return;
+  const running = new Set();
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      observer.unobserve(entry.target);
+      if (preference.matches) return;
+      const animation = entry.target.animate(
+        [{ opacity: 0, transform: 'translateY(24px)' }, { opacity: 1, transform: 'translateY(0)' }],
+        { duration: 700, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'none' }
+      );
+      running.add(animation);
+      animation.finished.then(() => running.delete(animation), () => running.delete(animation));
+    });
+  }, { threshold: 0.08 });
+  document.querySelectorAll('.intro .split > *, .section-heading, .card, .experience-image, .experience-copy, .statement h2, #contact > *, .questions details').forEach(element => observer.observe(element));
+  const stopMotion = () => { if (preference.matches) running.forEach(animation => animation.cancel()); };
+  if (preference.addEventListener) preference.addEventListener('change', stopMotion);
+})();
