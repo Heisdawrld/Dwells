@@ -35,3 +35,8 @@ JavaScript syntax checked. Browser checks include residence selection, rejection
 
 ## Photography
 The sample lounge/bedroom images are by Basile Morin and the 1 Hotel Miami Beach image is by Clairecato321, via Wikimedia Commons, CC BY-SA 4.0. Source and licence links are in the site's Photography credits dialog. Images are cropped with CSS; original assets are retained. Dwell logo supplied by the client.
+
+## Confirmed Olive Suites pricing
+₦80,000 per night, minimum two nights, plus one ₦30,000 refundable caution fee per stay. Date selection and submission enforce the minimum; enquiry review and WhatsApp show the breakdown. Refund terms and optional extras are confirmed with Dwell.
+
+Netlify headers use CSP script-src self to allow the site’s external local scripts and block inline scripts. Netlify documents that this prevents its injected badge from rendering. Verify the response header and badge after deployment.
